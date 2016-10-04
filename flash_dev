@@ -39,9 +39,10 @@
 #-----------
 #
 # flash_dev (this will yield the usage)
-# " Usage : flash_dev <image.tgz/image.tar.gz> [-pe/pf, default=-pe] [filesystem, default=ext3]" 
+# " Usage : flash_dev <image.tgz/image.tar.gz> [-pe/-pf/-jpsh, default=-pe] [filesystem, default=ext3]" 
 # " -pe : Just erase the contents of USB and copy rootfs                                       " 
 # " -pf : Write FS and then copy rootfs                                                        " 
+# " -jpsh : Just Post Sync Hook operation
 #
 # flash_dev comcast-hybrid-vbn-image-pacexg1v3.tar.gz            # erase instead of mkfs
 # flash_dev comcast-hybrid-vbn-image-pacexg1v3.tar.gz -pf        # mkfs.ext3
@@ -81,7 +82,9 @@ post_sync_hook() {
     ## #--- Create rtrpc.conf to sustain rtRemote Objs beyond 15Secs
     ## sudo echo "rt.rpc.cache.max_object_lifetime=1800" > $DEST/etc/rtrpc.conf
 
-    ## stb_cp
+    if [ `which stb_cp` ]; then
+        stb_cp
+    fi
 }
 
 ##########################################################################
@@ -199,17 +202,19 @@ if [[ "$DEV_MOUNT_POINT" == "" ]]; then
     run_cmd sudo mount "$DEV" "$DEV_MOUNT_POINT"
 fi
 
-# Prepare device. Pass erase/flash and filesystem options
-prepare_dev $2 $3
+{
+    if [ "$2" != "-jpsh" ]; then
+        # Prepare device. Pass erase/flash and filesystem options
+        prepare_dev $2 $3
 
-if :; then
-    echo "---> Flashing file"
-    run_cmd sudo tar -xvzf "$FILE_TO_FLASH" -C "$DEV_MOUNT_POINT" > /dev/null
-    my_sleep
+        echo "---> Flashing file"
+        run_cmd sudo tar -xvzf "$FILE_TO_FLASH" -C "$DEV_MOUNT_POINT" > /dev/null
+        my_sleep
 
-    echo "---> Synching USB"
-    run_cmd sync
-    my_sleep
+        echo "---> Synching USB"
+        run_cmd sync
+        my_sleep
+    fi
 
     ########################
     echo "---> Doing post_sync_hook :)"
@@ -217,12 +222,14 @@ if :; then
     my_sleep
     ########################
 
-    echo "---> Unmounting"
-    run_cmd sudo umount "$DEV_MOUNT_POINT"
-    my_sleep
+    if [ "$2" != "-jpsh" ]; then
+        echo "---> Unmounting"
+        run_cmd sudo umount "$DEV_MOUNT_POINT"
+        my_sleep
 
-    echo "---> Detaching"
-    run_cmd udisks --detach "$DEV"
-fi
+        echo "---> Detaching"
+        run_cmd udisks --detach "$DEV"
+    fi
 
-notify "Flashing USB"
+    notify "Flashing USB"
+}
