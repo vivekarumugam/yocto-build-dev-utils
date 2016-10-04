@@ -1,0 +1,881 @@
+#!/bin/sh
+
+#########################################################################################
+#########################################################################################
+#                 USAGE GUIDE OF YOCTO BUILD UTIL RESOURE FILE
+#########################################################################################
+#########################################################################################
+#
+# This resource file is a utility to enhance usual build/install/copy to STB cycle
+#
+# Note : 
+# This is not a replacement of bitbake, rather it just uses the run.do_compile, run.do_install
+# scripts created by bitbake.
+#
+#---------------
+# prerequisite :
+#---------------
+# 1) This resource file must have been sourced in order to execute its commands
+#    * Keep this file under $HOME directory (i.e it should be ~/.vybashrc"
+#    * Do either ". ~/.vybashrc" manually or have the same under "~/.bashrc"
+#
+# 2) To run build/install/copy command, you must be anywhere under a valid component
+#    For e.g: <yocto-root>/build-abc/tmp/work/mipsel-xyz/westeros
+#
+#    * This utility will try to find run.do_{compile/install} backwards recursively.
+#    * So you can be inside any directory under the component, no matter how deep.
+#
+# 3) To use any variation of copy (to STB) command, a valid IP address of STB should
+#    be set to _stb_ip (export _stb_ip=123.123.123.123), and that IP should be alive
+#
+# 4) Copy commands use 'scp -B' (i.e batch mode). So this implies you should have
+#    entered your public key (content of ~/.ssh/id_rsa.pub) to STB's /etc/dropbear/authorized_keys
+#    file to facilitate passwordless copy. Otherwise you will end up in authentication error
+#
+#    * This is a onetime work, you can do this manually, or you can script to do it during flashing
+#    * This key updation is not required for build and install works (r_compile, r_install)
+#
+# 5) The alias names provided in this utility are chanied with &&.
+#    That is if the first command fails, next command will not be executed.
+#    For e.g: alias bic="b && i && jc", if build(b) fails, execution will stop
+#
+#---------------------------
+# Functionalities Provided :
+#---------------------------
+# 1) Build (equivalent to run.do_compile)
+# 2) Install (equivalent to run.do_install)
+# 3) Copy (to copy the binaries/fils from <component>/image to STB's respective directories)
+#
+# Build Functionalities: 
+# * Type "r_compile" in shell from a valid directory and see the run.do_compile is executed
+# * An alias provided for that "alias b='r_compile'", so it is just enough to type "b"
+#
+# Install Functionalities: 
+# * Type "r_install" in shell from a valid directory and see the run.do_install is executed
+# * An alias provided for that "alias i='r_install'", so it is just enough to type "i"
+#
+# Copy Functionalities: 
+# * This will copy required non-link files from image directory to STB
+# * Links will be treated separately (i.e if link is not present in STB, it will be created)
+#
+# There are three variations of copy functionalities
+# 1) CPY_1: Copy files listed in "FILS_INFO" of <component>/pkgdata/runtime/<component> file
+# 2) CPY_2: Copy all the files under directory <component>/image
+# 3) CPY_3: Copy just the files listed in file <component>/image/copy_override
+# 
+# CPY_1: Copy files listed in "FILS_INFO"
+#    <component>/pkgdata/runtime/<component> file will have a list "FILES_INFO"
+#    which will have the files to be populated under the generic package. Copy just those files
+#
+#    * Type "r_copy" in shell from a valid directory and see that the file transfer
+#    * An alias provided for that "alias jc='r_copy'", so it is just enough to type "jc"
+#
+# CPY_2: Copy all the files from image
+#    This copies all the files under image/, including headerfiles and everything
+#
+#    * Type "r_copy image" in shell from a valid directory and see that the file transfer
+#    * An alias provided for that "alias jca='r_copy image'", so it is just enough to type "jca"
+#
+# CPY_2: Copy files mentioned in <component>/image/copy_override
+#    If you don't want to copy all the files everytime and want only specific files
+#    should be copied, you can create a "copy_override" under <component>/image directory.
+#
+#    Edit that file to have only the list of files to be copied (every file in separate line).
+#    Note that you can also have a line starting with '#' (it will be neglected)
+#
+#    * Apart from this file list customization, there is no difference b/w CPY_1 & CPY_3
+#    * Type "r_copy" in shell from a valid directory and see that the file transfer
+#    * An alias provided for that "alias jc='r_copy", so it is just enough to type "jc"
+#
+#    * As e.g there shall be a file .../westeros/image/copy_override
+#      which says "libwesteros_render_gl.so.0.0.0" on 'cat .../copy_override'
+#
+#--------------------------
+# More Functional Flavours:
+#--------------------------
+#
+# As the main focus of this script is in its copying functionality, we have two more options
+# to enhance copy operation
+# 
+# 1) MFF_1: Stripping binaries
+# 2) MFF_2: Copy on Update
+#
+# MFF_1: Stripping binaries
+#    * You can enable stripping by setting "env _strip=1"
+#    * The strip program will be automatically found and used (from run.do_compile)
+#    * If don't want to strip your binaries, do "unset _strip" (this is the case by default)
+#
+# MFF_2: Copy on Update (*)
+#    * This to copy only binaries which got updated in the recent make/build
+#    * This can be enabled by setting "env _cou=1" (cou stands for Copy On Update)
+#    * Here the md5sum hash are compared with stored one and files are copied if that differ
+#    * The hash_map file will in <component>/image/<component>_vyrc_stamp
+#    * If "_cou" is set to 1, files will be copied on following criterian:
+#           * If the map file is not present (one will be generated newly)
+#           * If the old and new md5sum checksum differ
+#
+#-----------------------
+# Alias Names Provided :
+#-----------------------
+#
+# b='r_compile',        b   stands for build
+# i='r_install',        i   stands for install
+# jc='r_copy',          jc  stands for just-copy (copy FILES_INFO list)
+# jca='r_copy image',   jca stands for just-copy all (all image files)
+#
+# There are also combination of the basic aliases to have shorter command sequence
+# bic='b && i && jc'    stands for build, install and copy (FILES_INFO list)
+# bica='b && i && jca'    stands for build, install and copy all (all image files)
+#
+#-----------
+# Examples :
+#-----------
+#
+# Let's suppose I am under dir: .../westeros/packages-split/westeros-dbg/
+#
+# I can do the following
+#
+# env _strip=1 
+# env _cou=1 
+# bic (to have build/image/copy)
+# bica (to have build/image/copy)
+#
+# Note:
+# * There is one more option "_dryrun", which if set "1" will enable you to have just a dry run
+#   - run the scripts & dont perform any actual build/install/copy 
+#   - it will just ouput the gross sequence of commands to be executed
+#
+#########################################################################################
+#########################################################################################
+
+#--- Yocto Build Utils RC
+#CPY_FIND_FILE_IN=image
+
+declare -r VY_LOG_LEVEL_NONE=0
+declare -r VY_LOG_LEVEL_ERROR=1
+declare -r VY_LOG_LEVEL_WARN=2
+declare -r VY_LOG_LEVEL_INFO=3
+declare -r VY_LOG_LEVEL_DEBUG=4
+declare -r VY_LOG_LEVEL_DEBUG_VAR=5
+
+r_display_settings() {
+    echo "_cou=$_cou"
+    echo "_strip=$_strip"
+    echo "_dryrun=$_dryrun"
+    echo "_stb_ip=$_stb_ip"
+    echo "_stb_user=$_stb_user"
+    echo "_stb_root=$_stb_root"
+
+    echo -n "VY_LOG_LEVEL=$VY_LOG_LEVEL "
+    case $VY_LOG_LEVEL in
+        $VY_LOG_LEVEL_NONE) echo "(VY_LOG_LEVEL_NONE)" ;;
+        $VY_LOG_LEVEL_ERROR) echo "(VY_LOG_LEVEL_ERROR)" ;;
+        $VY_LOG_LEVEL_WARN) echo "(VY_LOG_LEVEL_WARN)" ;;
+        $VY_LOG_LEVEL_INFO) echo "(VY_LOG_LEVEL_INFO)" ;;
+        $VY_LOG_LEVEL_DEBUG) echo "(VY_LOG_LEVEL_DEBUG)" ;;
+        $VY_LOG_LEVEL_DEBUG_VAR) echo "(VY_LOG_LEVEL_DEBUG_VAR)" ;;
+        *) echo "" ;;
+    esac
+}
+
+r_log_info() {
+    _prev_res=$?
+    if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_INFO ]]; then
+        [ $# -gt 0 ] && echo -n "[INFO] "
+        echo $@
+    fi
+    return $_prev_res
+}
+
+r_log_warn() {
+    _prev_res=$?
+    if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_WARN ]]; then
+        [ $# -gt 0 ] && echo -n "[WARN] "
+        echo $@
+    fi
+    return $_prev_res
+}
+
+r_log_error() {
+    _prev_res=$?
+    if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_ERROR ]]; then
+        [ $# -gt 0 ] && echo -n "[ERROR] "
+        echo $@
+    fi
+    return $_prev_res
+}
+
+r_log_debug() {
+    _prev_res=$?
+    if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_DEBUG ]]; then
+        [ $# -gt 0 ] && echo -n "[DEBUG] "
+        echo $@
+    fi
+    return $_prev_res
+}
+
+r_log_var() {
+    # y=\$"$1"   # Name of variable (not value!).
+    # echo $y    # $Junk
+
+    # x=`eval "expr \"$y\" "`
+    # echo $1=$x
+    # eval "$1=\"Some Different Text \""  # Assign new value.
+    
+
+    #Usage : r_log_var <func_name> <var_name>
+    if [ $# -eq 1 ]; then
+        _fname=""
+        _vname=${1:-_fname}
+    elif [ $# -eq 2 ]; then
+        _fname=${1:-""}
+        _vname=${2:-_fname}
+    else
+        return
+    fi
+
+    _prev_res=$?
+    if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_DEBUG_VAR ]]; then
+        [ $# -gt 0 ] && echo -n "[DEBUG_VAR] "
+        _vvalue=`eval "expr \"\$"$_vname"\" "`
+        echo "$_fname : "$_vname=$_vvalue
+    fi
+    return $_prev_res
+}
+
+alias r_log_var_alias='r_log_var $FUNCNAME'
+
+r_cleanup_vars() {
+    unset COMPONENT COPY CPY DIR FILE FIND FOUND HASH HOME i IMAGE LC LINK NOOC OBJ OPTION OVERRIDE PKGDATA PRUNED PWD SKIP STB STOP STRIP SYS TEST TRY WARN WC
+}
+
+r_trim_space() {
+    echo "$1" | sed 's# ##g'
+}
+
+r_prune_path() {
+    echo "$1" | sed 's#\/\+#\/#g'
+}
+
+find_back_recursive() {
+    echo && echo "####################################################"
+    if [[ "$_dryrun" != "" ]]; then
+        r_log_info "DRY RUN MODE ENABLED" 
+    fi
+
+    #--- At successful completion this function should set "DIR_TO_WORK" to a valid dir 
+    #--- which contains the file $FILE_TO_LOOK
+
+    #--- Crucial to set this to empty string at the very start of each func or atleast here
+    STOP_AT_DIR=""
+    DIR_TO_WORK=""
+    FIND_RES=""
+    SKIP_DIR=""
+    FOUND=0
+    COMPONENT=""
+    COMPONENT_DIR=""
+
+    TEST_DIR=`pwd`
+    FILE_TO_LOOK="${1:-run.do_compile}"
+    TRY_TILL_LAST="$2"
+
+    if [[ "$TEST_DIR" =~ ^.*/tmp/work/[^/]+ ]]; then
+        STOP_AT_DIR=`echo $TEST_DIR | sed "s#\(^.*/tmp/work/[^/]\+\)\(/.*\)\?#\1#"`
+        [ ! -e $STOP_AT_DIR ] && return 1
+        STOP_AT_DIR=`basename $STOP_AT_DIR`
+    else
+        r_log_error "You are not under any valid dir under \".../tmp/work/.../\""
+        return 1
+    fi
+    STOP_AT_DIR=${STOP_AT_DIR:-mips32el-rdk-linux}
+    COMPONENT_DIR=`echo $TEST_DIR | sed "s#\(^.*/tmp/work/$STOP_AT_DIR\)\(\(/[^/]\+\)\(/.*\)\?\)\?#\1\3#"`
+    COMPONENT=`echo $TEST_DIR | sed "s#\(^.*/tmp/work/$STOP_AT_DIR\)\(/\([^/]\+\)\(/.*\)\?\)\?#\3#"`
+    r_log_var_alias COMPONENT_DIR
+    r_log_var_alias COMPONENT
+
+    if [ "$COMPONENT" == "" -o "$COMPONENT_DIR" == "" -o ! -e "$COMPONENT_DIR" ]; then
+        r_log_error "You are not under any valid component directory"
+        return 1
+    fi
+
+    r_log_var_alias TEST_DIR
+    r_log_var_alias FILE_TO_LOOK
+    r_log_var_alias STOP_AT_DIR
+    r_log_var_alias TRY_TILL_LAST
+    
+    #--- Find number of occurences of the given STOP_DIR_AT in the path
+    NOOC=$(grep -o "$STOP_AT_DIR" <<< "$TEST_DIR" | wc -l)
+    if [[ "$TEST_DIR" != "" ]] && [[ "$TEST_DIR"=~"$STOP_AT_DIR" ]]; then
+        while [ $NOOC -gt 0 ]
+        do
+            r_log_var_alias NOOC
+            while [ "$TEST_DIR" != "" -a "$TEST_DIR" != "/" -a $FOUND -eq 0 ] && [[ ! `basename $TEST_DIR` =~ "$STOP_AT_DIR" ]]
+            do
+                r_log_var_alias TEST_DIR
+                FIND_RES=`find $TEST_DIR -name $SKIP_DIR -prune -o -name $FILE_TO_LOOK -print`
+    
+                SKIP_DIR=`basename $TEST_DIR`
+                TEST_DIR=`dirname $TEST_DIR`
+                FOUND=`echo $FIND_RES | wc -w`
+                if [[ $FOUND -ge 1 ]]; then
+                    break
+                fi
+            done
+        if [ "$TRY_TILL_LAST" != "" ]; then
+            NOOC=$((NOOC-1))
+            SKIP_DIR=`basename $TEST_DIR`
+            TEST_DIR=`dirname $TEST_DIR`
+        else
+            NOOC=$((0))
+            r_log_debug "Haven't gone through all the dirs"
+        fi
+        done
+    fi
+    
+    if [[ "$FOUND" -eq 1 ]]; then
+        DIR_TO_WORK=`dirname "$FIND_RES"`
+        return 0
+    elif [[ "$FOUND" -gt 1 ]]; then
+        r_log_error "Ambiguos Results :"
+        r_log_error "More than one \"$FILE_TO_LOOK\" file found under \"$TEST_DIR/$SKIP_DIR\""
+    fi
+
+    return 1
+}
+
+r_compile() {
+    find_back_recursive run.do_compile
+    if [ \( $? -ne 0 \) -o \( "$DIR_TO_WORK" == "" \) -o \( ! -e "$DIR_TO_WORK" \) ]; then
+        r_log_error "run.do_compile not found"
+        return 1
+    fi
+
+    [[ $_dryrun != "" ]] && r_log_info $DIR_TO_WORK/run.do_compile && return 0
+    [[ $_dryrun == "" ]] && $DIR_TO_WORK/run.do_compile && return 0
+
+    return 1
+}
+
+r_install() {
+    find_back_recursive run.do_install
+    if [ \( $? -ne 0 \) -o \( "$DIR_TO_WORK" == "" \) -o \( ! -e "$DIR_TO_WORK" \) ]; then
+        r_log_error "run.do_install not found"
+        return 1
+    fi
+
+    [[ $_dryrun != "" ]] && r_log_info $DIR_TO_WORK/run.do_install && return 0
+    [[ $_dryrun == "" ]] && $DIR_TO_WORK/run.do_install && return 0
+
+    return 1
+}
+
+r_get_strip() {
+    #--- We needn't to find strip program every time, if the program is found already use it
+    if [ "$STRIP_PROGRAM" != "" -a -e "$STRIP_PROGRAM" ]; then
+        return 0
+    fi
+
+    STRIP_COMPILE_SCRIPT="$DIR_TO_WORK/temp/run.do_compile"
+    [ "$DIR_TO_WORK" == "" -o ! -e "$STRIP_COMPILE_SCRIPT" ] &&
+        r_log_error "\"run.do_compile\" script not found to fetch strip program detail" &&
+        return 1
+
+    STRIP_SEARCH_PATH=`grep --regexp="\<PATH=" $STRIP_COMPILE_SCRIPT | sed -e 's#\(^[^/]*\|"\)##g' -e 's#:# #g'`
+    [ $? -ne 0  -o "$STRIP_SEARCH_PATH" == "" ] && return 1
+
+    STRIP_PROGRAM=`find $STRIP_SEARCH_PATH -name *strip 2> /dev/null | head -n 1 2> /dev/null`
+    [ $? -ne 0  -o "$STRIP_PROGRAM" == "" -o ! -e "$STRIP_PROGRAM" ] && return 1
+
+    r_log_info "STRIP_PROGRAM = $STRIP_PROGRAM"
+    return 0
+}
+
+r_handle_strip() {
+    #--- if all of the construct entire evaluation of the construct is true function will be return immediately
+    #--- i.e if either of the condition is true the construct will be evalueated as true then the function will return
+    [ "$1" == "" -o ! -e "$1" ] && return 1
+    FILE_TO_STRIP=$1
+
+    #--- If strip has not been enabled inform user but continue without error
+    if [ "$_strip" == "" ]; then
+        if [ "$WARN_UNSTRIPPED" == "1" ]; then
+            r_log_info "-------------------------------------------------"
+            r_log_info "You could enable stripping by exporting  _strip=1"
+            r_log_info "-------------------------------------------------"
+            WARN_UNSTRIPPED=0
+        fi
+        return 0
+    fi
+
+    if [ -L $FILE_TO_STRIP ]; then
+        r_log_debug "---> Strip : Skipping link \"`basename $FILE_TO_STRIP`\""
+        return 0
+    fi
+
+    file $FILE_TO_STRIP | grep --regexp="\(not stripped\|unstripped\)" >& /dev/null
+    if [ $? -ne 0 ]; then
+        r_log_debug "---> Strip : File already stripped (or) no need to strip"
+        return 0
+    fi
+
+    #--- If user just sets _strip, try to find the program yourself, report error if not found
+    #--- In that case ask you to set the program path in _strip env
+    if [ "$_strip" == "1" ]; then
+        r_get_strip 
+        [ $? -ne 0 -o "$STRIP_PROGRAM" == "" -o ! -e "$STRIP_PROGRAM" ] &&
+            r_log_error "Couldn't find strip program, try setting the program path in _strip env" &&
+            return 1
+    else
+    #--- If user sets the entire program path, then validate it
+        STRIP_PROGRAM=$_strip
+        [ "$STRIP_PROGRAM" == "" -o ! -e "$STRIP_PROGRAM" ] &&
+            r_log_error "Couldn't find strip program, please check the program path in _strip env" &&
+            return 1
+    fi
+
+    if [ -e "$STRIP_PROGRAM" ]; then
+        [[ $_dryrun != "" ]] && r_log_debug "Stripping : \"`basename $FILE_TO_STRIP`\" with \"`basename $STRIP_PROGRAM`\"" && return 0
+        [[ $_dryrun == "" ]] && $STRIP_PROGRAM $FILE_TO_STRIP >& /dev/null && return 0
+    fi
+
+    return 1
+}
+
+r_validate_stb_root() {
+    ping $_stb_ip -c 1 -W 1 > /dev/null
+    if [ $? -ne 0 ]; then
+        r_log_error "Host \"$_stb_ip\" not alive!"
+        return 1
+    fi
+
+    if [[ "$_dryrun" != "" ]]; then
+        _VY_STB_NAME=`ssh -o NumberOfPasswordPrompts=1 $_stb_user@$_stb_ip "uname -n" 2> /dev/null`
+        r_log_var_alias VY_STB_NAME
+
+        if [[ $? -eq 0 ]] && [[ "$_VY_STB_NAME" =~ ^(pace|arris|cisco).*$ ]]; then
+            r_log_info "Dealing with STB : $_VY_STB_NAME"
+            if [[ "$_stb_user" != "root" ]]; then
+                r_log_error "STB user is not root but \"$_stb_user\""
+                return 1
+            fi
+            return 0
+        else
+            r_log_info "Dealing with machine : $_VY_STB_NAME"
+            _VY_HOME_DIR=`ssh -o NumberOfPasswordPrompts=1 $_stb_user@$_stb_ip 'echo $PWD' 2> /dev/null`
+            r_log_var_alias _VY_HOME_DIR
+            if [[ $? == 0 ]] && [[ ! -z "$_VY_HOME_DIR" ]] && [[ "$_stb_root" =~ "$_VY_HOME_DIR" ]]; then
+                return 0
+            else
+                r_log_error "_stb_ip is set to a machine named \"$_VY_STB_NAME\" and _stb_root is not in home dir (\"$_stb_root\")"
+                return 1
+            fi
+        fi
+    else
+        return 0;
+    fi
+
+    return 1
+}
+
+r_handle_dir_creation() {
+    [ "$1" == "" ] && return 1
+    DIR_TO_CREATE=$1
+
+    [[ ! -z "$_stb_root" ]] && [[ "$_stb_root" != "/" ]] && DIR_TO_CREATE=`r_prune_path $_stb_root/$DIR_TO_CREATE`
+    r_log_var DIR_TO_CREATE
+
+    if [[ "$_dryrun" == "" ]]; then
+        ssh $_stb_user@$_stb_ip "[ ! -e $DIR_TO_CREATE ] && mkdir -p $DIR_TO_CREATE" >& /dev/null
+    else
+        r_log_debug ssh $_stb_user@$_stb_ip "[ ! -e $DIR_TO_CREATE ] && mkdir -p $DIR_TO_CREATE"
+    fi
+
+    return 0
+}
+
+r_handle_link_creation() {
+    LINK_FILE=${1:-""}
+
+    [ ! -e "$LINK_FILE" ]  && return 1
+    [ ! -L "$LINK_FILE" ] && return 0
+
+    LINK_FILE_BASE=`basename $LINK_FILE`
+    OBJ_FILE_BASE=`ls -l $LINK_FILE | sed 's#\([^>]\+>\|[^a-zA-Z0-9._-]*\)##g'`
+    SYS_LINK_DIR=`echo $LINK_FILE | sed "s#\($DIR_TO_WORK/image\)\(.*\)\($LINK_FILE_BASE\)#\1\2#"`
+    STB_LINK_DIR=`echo $LINK_FILE | sed "s#\($DIR_TO_WORK/image\)\(.*\)\($LINK_FILE_BASE\)#\2#"`
+
+    r_log_debug "SYS : \"$SYS_LINK_DIR/$LINK_FILE_BASE\" -> \"$SYS_LINK_DIR/$OBJ_FILE_BASE\""
+    if [ ! -e "$SYS_LINK_DIR/$OBJ_FILE_BASE" ]; then
+        r_log_error "Link \"$LINK_FILE\" points to invalid object \"$SYS_LINK_DIR/$OBJ_FILE_BASE\""
+        return 1
+    fi
+
+    PRUNED_LINK=`r_prune_path $STB_LINK_DIR/$LINK_FILE_BASE`
+    PRUNED_OBJ=`r_prune_path $OBJ_FILE_BASE`
+
+    # TEST_DIR="abc"
+    # PRUNED_LINK=`r_prune_path $STB_LINK_DIR/$TEST_DIR/$LINK_FILE_BASE`
+    # PRUNED_OBJ=`r_prune_path $STB_LINK_DIR/$TEST_DIR/$OBJ_FILE_BASE`
+    # r_log_info "STB : \"$PRUNED_LINK\" -> \"$PRUNED_OBJ\""
+
+    [[ ! -z "$_stb_root" ]] && [[ "$_stb_root" != "/" ]] && PRUNED_LINK=`r_prune_path $_stb_root/$PRUNED_LINK`
+    r_log_var PRUNED_LINK
+
+    if [[ "$_dryrun" == "" ]]; then
+        ssh $_stb_user@$_stb_ip "[ -e $PRUNED_LINK -a ! -L $PRUNED_LINK ] && rm $PRUNED_LINK; \
+            [ ! -e $PRUNED_LINK ] && ln -s $PRUNED_OBJ $PRUNED_LINK" >& /dev/null
+    else
+        r_log_debug ssh $_stb_user@$_stb_ip "[ -e $PRUNED_LINK -a ! -L $PRUNED_LINK ] && rm $PRUNED_LINK; \
+            [ ! -e $PRUNED_LINK ] && ln -s $PRUNED_OBJ $PRUNED_LINK"
+    fi
+
+    return 0
+}
+
+r_hash_equal() {
+    # r_hash_equal <op[-c][-u]> <stored_hash_file_to_compare> <file_name/key>
+
+    [ "$#" -ne 3 ] && return 1
+
+    HASH_OP=$1
+    HASH_MAP=$2
+    HASH_FTP=$3
+
+    HASH_NEW_HASH=`md5sum $HASH_FTP | cut -d ' ' -f 1`
+
+    [ "$1" == "" -o "$2" == "" -o "$3" == "" ] && return 1
+    [  ! -e "$HASH_FTP" ] && return 1
+
+    if [ ! -e "$HASH_MAP" ]; then
+        touch "$HASH_MAP"
+    fi
+
+    file $HASH_FTP | grep --regexp="\(not stripped\|unstripped\)" >& /dev/null
+    if [ $? -eq 0 ]; then
+        HASH_FTP_SFX=_us
+    else
+        HASH_FTP_SFX=_s
+    fi
+
+    HASH_FTP_BASE=`basename $HASH_FTP`
+    HASH_FTP_GREP=`grep --regexp="^\s*$HASH_FTP_BASE$HASH_FTP_SFX\s*=" "$HASH_MAP"`
+    HASH_FTP_GREP=`r_trim_space $HASH_FTP_GREP`
+
+    if [ "$HASH_OP" == "-c" ]; then
+        HASH_OLD_HASH=`echo $HASH_FTP_GREP | cut -d '=' -f 2`
+        r_log_debug "Old Hash=$HASH_OLD_HASH, New Hash=$HASH_NEW_HASH"
+        [ "$HASH_OLD_HASH" == "$HASH_NEW_HASH" ] && r_log_info "File not changed" && return 0
+    elif [ "$HASH_OP" == "-u" ]; then
+        if [ "$HASH_FTP_GREP" != "" ]; then
+            sed -i "s#.*\($HASH_FTP_BASE$HASH_FTP_SFX=\).*#\1$HASH_NEW_HASH#" $HASH_MAP
+        else
+            echo "$HASH_FTP_BASE$HASH_FTP_SFX=$HASH_NEW_HASH" >> $HASH_MAP
+        fi
+        return 0
+    fi
+
+    return 1
+}
+
+r_handle_file_copy() {
+    [ "$1" == "" -o ! -e "$1" ] && return 1
+    [ "$2" == "" ] && return 1
+    [ "$3" == "" ] && return 1
+
+    SYS_FILE_TO_COPY=$1
+    STB_FILE_TO_COPY=$2
+    SYS_FILE_HASH_MAP=$3
+    if [ -L $SYS_FILE_TO_COPY ]; then
+        r_log_info "---> File Copy : Skipping link \"`basename $STB_FILE_TO_COPY`\""
+        return 0
+    fi
+
+    if [[ "$_cou" != "" ]]; then
+        r_hash_equal -c $SYS_FILE_HASH_MAP $SYS_FILE_TO_COPY && return 0
+    fi
+
+    [[ ! -z "$_stb_root" ]] && [[ "$_stb_root" != "/" ]] && STB_FILE_TO_COPY=`r_prune_path $_stb_root/$STB_FILE_TO_COPY`
+    r_log_var STB_FILE_TO_COPY
+
+    if [[ "$_dryrun" == "" ]]; then
+        scp -B "$SYS_FILE_TO_COPY" $_stb_user@$_stb_ip:$STB_FILE_TO_COPY || return 1
+    else
+        r_log_debug scp -B "$SYS_FILE_TO_COPY" $_stb_user@$_stb_ip:$STB_FILE_TO_COPY
+    fi
+    _FILES_COPIED="$_FILES_COPIED $STB_FILE_TO_COPY"
+
+    #--- always update hash map
+    #if [[ "$_cou" != "" ]]; then
+    if :; then
+        r_hash_equal -u $SYS_FILE_HASH_MAP $SYS_FILE_TO_COPY
+    fi
+
+    return 0
+}
+
+r_display_summary() {
+    echo
+    echo
+    echo "----------------- SUMMARY -----------------"
+    echo "Files copied (" `echo $_FILES_COPIED | wc -w` ") :"
+    for i in $_FILES_COPIED
+    do
+        echo "  * $i"
+    done
+    echo "-------------------------------------------"
+}
+
+r_copy_from_list() {
+    CPY_LIST=$@
+    CPY_LIST_COUNT=$#
+    CPY_FIND_FILE_IN=image
+    CPY_FIND_HASH_FILE_PAT=_vyrc_stamp
+    _FILES_COPIED=
+
+    for i in $CPY_LIST
+    do
+        r_log_info "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+        r_log_info
+
+        r_log_info "Processing : $i"
+        #--- if line stars with '#' skip that
+        #--- true && continue
+        [[ "$i" =~ ^\s*#.* ]] && continue
+        [[ "$i" =~ copy_override ]] && continue
+        [[ "$i" =~ $CPY_FIND_HASH_FILE_PAT ]] && continue
+
+        COPY_LIST_FILE_BASE=`basename $i`
+        STB_COPY_FILE=`find "$DIR_TO_WORK/$CPY_FIND_FILE_IN" -name "$COPY_LIST_FILE_BASE" 2> /dev/null | head -n 1 2> /dev/null`
+        STB_COPY_FILE=`echo $STB_COPY_FILE | sed "s#\(.*\)\($CPY_FIND_FILE_IN\)\(.*\)#\3#" 2> /dev/null`
+        SYS_COPY_HASH="$DIR_TO_WORK/$CPY_FIND_FILE_IN/$COMPONENT$CPY_FIND_HASH_FILE_PAT"
+
+        if [ "$STB_COPY_FILE" == "" ]; then
+            r_log_error "File \"$COPY_LIST_FILE_BASE\" not found under \"$DIR_TO_WORK/$CPY_FIND_FILE_IN\""
+            return 1
+        fi
+        SYS_COPY_FTP=`r_prune_path "$DIR_TO_WORK/$CPY_FIND_FILE_IN/$STB_COPY_FILE"`
+
+        r_log_var_alias SYS_COPY_FTP
+        r_log_var_alias STB_COPY_FILE
+        r_log_var_alias COPY_LIST_FILE_BASE
+
+        if [[ $_stb_ip =~ ^([0-9]{1,3}).([0-9]{1,3}).([0-9]{1,3}).([0-9]{1,3}) ]]; then
+            r_handle_strip "$SYS_COPY_FTP"
+            r_handle_dir_creation `dirname $STB_COPY_FILE`
+            r_handle_link_creation $SYS_COPY_FTP
+            r_handle_file_copy $SYS_COPY_FTP $STB_COPY_FILE $SYS_COPY_HASH || return 1
+        else
+            r_log_error "Invalid _stb_ip format, expected 123.123.123.123"
+        fi
+    done
+
+    return 0
+}
+
+r_copy_from_pkgdata() {
+    #--- This function returns 0 if all the files were copied without any error
+    #--- If any error occurs, it will return immediately
+
+    COMPONENT_PKG_FILE=`find $DIR_TO_WORK/pkgdata -maxdepth 1 -type f`
+    if [[ `echo $COMPONENT_PKG_FILE | wc -w` -gt 1 ]]; then
+        r_log_error "More than one pkg file found at \"$DIR_TO_WORK/pkgdata\""
+        return 1
+    fi
+
+    COMPONENT_PKG_FILE=`basename $COMPONENT_PKG_FILE`
+    if [ ! -e $DIR_TO_WORK/pkgdata/runtime/$COMPONENT_PKG_FILE ]; then
+        r_log_error "File \"$DIR_TO_WORK/pkgdata/runtime/$COMPONENT_PKG_FILE\" not found"
+        return 1
+    fi
+
+    PKGDATA_FILE_LIST=`grep FILES_INFO $DIR_TO_WORK/pkgdata/runtime/$COMPONENT_PKG_FILE 2> /dev/null`
+    PKGDATA_FILE_LIST=`echo $PKGDATA_FILE_LIST | sed 's#\(: [0-9]\+\|[,"{}]\|FILES_INFO: \)##g' 2> /dev/null`
+    r_copy_from_list $PKGDATA_FILE_LIST
+
+    r_copy_from_list_res=$?
+    r_display_summary
+    return $r_copy_from_list_res
+}
+
+r_copy_from_image() {
+    #--- This function returns 0 if all the files were copied without any error
+    #--- If any error occurs, it will return immediately
+
+    IMAGE_FILE_LIST=`find $DIR_TO_WORK/image -type f -o -type l | sed 's#.*image\/\(.*\)$#\1#'`
+    r_copy_from_list $IMAGE_FILE_LIST
+
+    r_copy_from_list_res=$?
+    r_display_summary
+    return $r_copy_from_list_res
+}
+
+r_copy_from_override() {
+    #--- This function returns 0 if all the files were copied without any error
+    #--- If any error occurs, it will return immediately
+
+    #--- Check if the file is present,
+    #--- if file is not present the construct will evaluate true and the next expression will return from the function
+    #--- true && return 1
+    [ "$OVERRIDE_FILE" == "" -o ! -e "$OVERRIDE_FILE" ] && return 1
+
+    r_copy_from_list `cat "$OVERRIDE_FILE"`
+
+    r_copy_from_list_res=$?
+    r_display_summary
+    return $r_copy_from_list_res
+}
+
+r_copy() {
+    find_back_recursive pkgdata
+    if [ \( $? -ne 0 \) -o \( "$DIR_TO_WORK" == "" \) -o \( ! -e "$DIR_TO_WORK" \) ]; then
+        r_log_error "pkgdata not found"
+        return 1
+    fi
+
+    if [[ "$_stb_ip" == "" ]]; then
+        r_log_error "_stb_ip not set"
+        return 1
+    fi
+
+    r_validate_stb_root || return 1
+
+    #--- OPTIONS could be "pkg" / "img" / "override"
+    OPTION=${1:-pkg}
+    WARN_UNSTRIPPED=1
+    STRIP_PROGRAM=""
+
+    if [ "$OPTION"  == "pkg" ]; then
+        OVERRIDE_FILE="$DIR_TO_WORK/image/copy_override" 
+        if [ -e "$OVERRIDE_FILE" ]; then
+            LC=`wc -l < "$OVERRIDE_FILE"`
+            WC=`wc -w < "$OVERRIDE_FILE"`
+            if [ $LC -gt 0 -a $WC -gt 0 ]; then
+                OPTION="override"
+            fi
+        else
+            OVERRIDE_FILE="" 
+        fi
+    fi
+    r_log_info "\"$OPTION\" option has been chosen"
+
+    if [ "$OPTION"  == "override" ]; then
+        r_copy_from_override $@
+    elif [ "$OPTION"  == "image" ]; then
+        r_copy_from_image $@
+    else
+        r_copy_from_pkgdata $@
+    fi
+
+    return $?
+}
+
+#------------------------
+
+ysetenv() {
+    _VY_PWD_BASE=`basename $PWD`
+
+    if [[ "$_VY_PWD_BASE" =~ ^build-[a-z0-9-]+$ ]]; then
+         cd ../
+         . meta-rdk/setup-environment $_VY_PWD_BASE
+    elif [ -f "meta-rdk/setup-environment" ]; then
+         _VY_BUILDDIRS=`find -maxdepth 1 -name "build-*" -type d`
+         _VY_NO_OF_BUILDDIRS=`echo $_VY_BUILDDIRS | wc -w`
+
+         r_log_var _VY_BUILDDIRS
+         r_log_var _VY_NO_OF_BUILDDIRS
+
+         if [ $_VY_NO_OF_BUILDDIRS -eq 1 ]; then
+             . meta-rdk/setup-environment $_VY_BUILDDIRS
+         else
+             . meta-rdk/setup-environment
+         fi
+    else
+        r_log_error "Neither meta-rdk/setup-environment nor previous build dir found"
+        return 1
+    fi
+
+    return 0
+}
+
+r_set_stb_ip() {
+    export _stb_ip=${1-192.168.2.62}
+}
+
+r_unset_stb_ip() {
+    unset _stb_ip
+}
+
+r_set_stb_user() {
+    export _stb_user=${1:-root}
+}
+
+r_unset_stb_user() {
+    unset _stb_user
+}
+
+r_set_stb_root() {
+    export _stb_root=${1:-"/"}
+}
+
+r_unset_stb_root() {
+    unset _stb_root
+}
+
+#------------------------
+
+alias b='r_compile'            # build 
+alias i='r_install'            # install 
+alias jc='r_copy'              # copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
+alias jca='r_copy image'       # copy all image/ contents to stb (except links) (jca-just copy all)
+
+alias bi='b && i'              # build & install
+alias bic='b && i && jc'       # build & install & copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
+alias bica='b && i && jca'     # build & install & copy all image/ contents to stb (except links)
+
+alias ic='i && jc'             # install & copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
+alias ica='i && jca'           # install & copy all image/ contents to stb (except links)
+
+#------------------------
+
+alias scou='export _cou=1'
+alias uscou='unset _cou'
+
+alias sstrip='export _strip=1'
+alias usstrip='unset _strip'
+
+alias sdrun='export _dryrun=1'
+alias usdrun='unset _dryrun'
+
+alias sstbip='r_set_stb_ip'
+alias usstbip='r_unset_stb_ip'
+
+alias sstbuser='r_set_stb_user'
+alias usstbuser='r_unset_stb_user'
+
+alias sstbroot='r_set_stb_root'
+alias usstbroot='r_unset_stb_root'
+
+alias svylln='export VY_LOG_LEVEL=0'
+alias svylle='export VY_LOG_LEVEL=1'
+alias svyllw='export VY_LOG_LEVEL=2'
+alias svylli='export VY_LOG_LEVEL=3'
+alias svylld='export VY_LOG_LEVEL=4'
+alias svyllv='export VY_LOG_LEVEL=5'
+alias usvyll='unset VY_LOG_LEVEL'
+
+alias shwset='r_display_settings'
+
+#------------------------
+#-- Default Settings ---#
+#------------------------
+sstrip
+sstbip
+sstbroot
+sstbuser
+: ${VY_LOG_LEVEL:=$VY_LOG_LEVEL_INFO}
+#------------------------
+
+echo "Sourced ~/.vybashrc"
+
+# To get the list of variables used, use the below expression
+# grep --regexp="\$[a-zA-Z]\+" .vybashrc -o  | sort -u | sed 's#\$##'

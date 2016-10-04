@@ -1,0 +1,228 @@
+#!/bin/sh
+
+#########################################################################################
+#########################################################################################
+#                 USAGE GUIDE OF FLASH_DEV TOOL
+#########################################################################################
+#########################################################################################
+#
+# This tool flashes the given rootfs to USB
+#
+#---------------
+# prerequisite :
+#---------------
+# 1) While running this tool, only one USB should be conneted to the system
+#    * This is a precautionary measure taken to avoid writing into non-intended partition
+#    * The USBs with dev name /dev/sd[b-z] only will be processed, this is under the 
+#      assumption that the primary disks will have names /dev/sda*
+#
+#-----------
+# Synopsis :
+#-----------
+# * This tool will do the following sequence of operation
+#       * Finds the mount point of USB device
+#       * Validate the rootfs file arg (exist and ends with tgz/.tar.gz)
+#       * Prepare the device for flashing (two options)
+#           1. Create a new filesystem passed (if -pf is the second arg)
+#               1.1. Write filesystem (mkfs) (ext3 by default, or the third arg)
+#               1.2. Mount it to a temporary mount point $HOME/tmp/mount
+#           2. Erase the content of USB, instead of writing a new FS table
+#       * Write the rootfs (comcast-xyz.tgz)
+#       * Do sync (to force flush all the filesystem buffers)
+#       * Perform any posy sync processing (i.e modifying the USB contents)
+#       * Unmount USB
+#       * Detach USB
+#       * Notify
+#
+#-----------
+# Examples :
+#-----------
+#
+# flash_dev (this will yield the usage)
+# " Usage : flash_dev <image.tgz/image.tar.gz> [-pe/pf, default=-pe] [filesystem, default=ext3]" 
+# " -pe : Just erase the contents of USB and copy rootfs                                       " 
+# " -pf : Write FS and then copy rootfs                                                        " 
+#
+# flash_dev comcast-hybrid-vbn-image-pacexg1v3.tar.gz            # erase instead of mkfs
+# flash_dev comcast-hybrid-vbn-image-pacexg1v3.tar.gz -pf        # mkfs.ext3
+# flash_dev comcast-hybrid-vbn-image-pacexg1v3.tar.gz -pf ext4   # mkfs.ext4
+#
+#-------
+# Note :
+#-------
+# You can modify post_sync_hook() to perform any operation on USB after flashing
+#
+#########################################################################################
+#########################################################################################
+
+post_sync_hook() {
+# -------------------------------------------------------------------------------------
+# Do stuff you want to do after extracting rootfs and after sync
+# Normally I would do the following :
+# 1) update $DEV_MOUNT_POINT/etc/profile to have some custom alias (i.e vim='vi' for eg)
+# 2) Add content of ~/.ssh/id_rsa.pub to $DEV_MOUNT_POINT/etc/dropbear/authorized_keys
+
+# Sample has been provided below
+# -------------------------------------------------------------------------------------
+
+    DEST=`mount -v | grep sdb | cut -d ' ' -f 3`
+
+    #--- Update STB's authrorization key file with machine's ssh public key to facilitate 
+    #--- the use of passwordless SCP (i.e scp -B)
+    if [[ -e $DEST/etc/dropbear/authorized_keys ]]; then
+        grep `cut -d ' ' -f 3 ~/.ssh/id_rsa.pub` $DEST/etc/dropbear/authorized_keys >& /dev/null
+        if [[ $? -ne 0 ]]; then
+           echo "Updating ssh authentication key"
+           KEY=`cat ~/.ssh/id_rsa.pub`
+           run_cmd sudo sed -i "1 i $KEY" $DEST/etc/dropbear/authorized_keys
+        fi
+    fi
+
+    ## #--- Create rtrpc.conf to sustain rtRemote Objs beyond 15Secs
+    ## sudo echo "rt.rpc.cache.max_object_lifetime=1800" > $DEST/etc/rtrpc.conf
+
+    ## stb_cp
+}
+
+##########################################################################
+
+run_cmd() {
+    echo "run_cmd : $@"
+    "$@" || exit
+}
+
+notify () {
+    if [[ "$?" == "0" ]]; then
+        PREV_RESULT="success"
+        ICON=face-cool
+    else
+        PREV_RESULT="failure"
+        ICON=face-angry
+    fi
+
+    if [[ "$1" != "" ]]; then
+        PREV_RESULT="$1 - $PREV_RESULT"
+    fi
+
+    #gnome-terminal --maximize --profile "My Title" --title "$PREV_RESULT"
+    killall notify-osd &> /dev/null
+    notify-send -u critical "$PREV_RESULT" -i $ICON
+}
+
+
+my_sleep() {
+    DELAY="${1:-3}"
+    #echo "---> Sleeping for $DELAY sec"
+    sleep $DELAY
+}
+
+validate_file() {
+    if [[ ! -e ${FILE_TO_FLASH} ]]; then
+        echo "File \"$FILE_TO_FLASH\" not found"
+        return 1;
+    fi
+
+    # if [[ -L ${FILE_TO_FLASH} ]]; then
+    #     echo "File is a link"
+    # fi
+
+    FILE_EXT=`echo "$FILE_TO_FLASH" | sed 's#[^.]\+.\(.*\)#\1#'`
+    if [[ "$FILE_EXT" =~ ^.*tar.gz\s*$ ]] || [[ "$FILE_EXT" =~ ^.*tgz\s*$ ]]; then
+        return 0;
+    else
+        echo "Invalid file \"$FILE_TO_FLASH\""
+        return 1;
+    fi
+}
+
+prepare_dev() {
+    if [[ "$1" == "-pf" ]]; then
+        if [[ "$2" != "" ]]; then
+            FS=$2
+        else
+            FS=ext3
+        fi
+        echo "---> Flashing $FS file system"
+        run_cmd sudo umount "$DEV_MOUNT_POINT"
+        my_sleep
+
+        run_cmd sudo mkfs.$FS "$DEV"
+        my_sleep
+
+        DEV_MOUNT_POINT="$HOME/tmp/mount"
+        if [[ ! -e "$DEV_MOUNT_POINT=" ]]; then
+            mkdir -p "$DEV_MOUNT_POINT" || exit
+        fi
+        run_cmd sudo mount "$DEV" "$DEV_MOUNT_POINT"
+        my_sleep
+    else
+        echo "---> Erasing dev contents"
+        run_cmd sudo rm -fr "$DEV_MOUNT_POINT"/* > /dev/null
+        run_cmd sudo rm -fr "$DEV_MOUNT_POINT"/.adobe > /dev/null
+        my_sleep
+    fi
+}
+
+##################################################################
+
+if [[ "$#" -lt 1 ]]; then
+    echo "Usage : flash_dev <image.tgz/image.tar.gz> [-pe/pf, default=-pe] [filesystem, default=ext3]"
+    echo "-pe : Just erase the contents of USB and copy rootfs"
+    echo "-pf : Write FS and then copy rootfs"
+    exit 1
+fi
+
+FILE_TO_FLASH="${1:-comcast-hybrid-vbn-image-pacexg1v3.tar.gz}"
+validate_file || exit
+echo "---> File to flash found : $FILE_TO_FLASH"
+
+DEV=`ls /dev/sd[b-z] 2> /dev/null`
+DEV_COUNT=`ls /dev/sd[b-z] -1 2> /dev/null | wc -l`
+
+if [[ $DEV_COUNT -gt 1 ]]; then
+    echo "Carefull - More than one USB/Disks found"
+    exit
+elif [[ $DEV_COUNT -lt 1 ]]; then
+    echo "Carefull - No USB/Disks found"
+    exit
+fi
+
+# mpnt has been defined in ~/.bashrc
+DEV_MOUNT_POINT=`mount -v | grep "$DEV" | cut -d " " -f 3`
+echo "[$DEV] found mounted on : $DEV_MOUNT_POINT"
+if [[ "$DEV_MOUNT_POINT" == "" ]]; then
+    DEV_MOUNT_POINT="$HOME/tmp/mount"
+    echo "---> Mounting device on $DEV_MOUNT_POINT"
+    if [[ ! -e "$DEV_MOUNT_POINT=" ]]; then
+       mkdir -p "$DEV_MOUNT_POINT=" || exit
+    fi
+    run_cmd sudo mount "$DEV" "$DEV_MOUNT_POINT"
+fi
+
+# Prepare device. Pass erase/flash and filesystem options
+prepare_dev $2 $3
+
+if :; then
+    echo "---> Flashing file"
+    run_cmd sudo tar -xvzf "$FILE_TO_FLASH" -C "$DEV_MOUNT_POINT" > /dev/null
+    my_sleep
+
+    echo "---> Synching USB"
+    run_cmd sync
+    my_sleep
+
+    ########################
+    echo "---> Doing post_sync_hook :)"
+    post_sync_hook
+    my_sleep
+    ########################
+
+    echo "---> Unmounting"
+    run_cmd sudo umount "$DEV_MOUNT_POINT"
+    my_sleep
+
+    echo "---> Detaching"
+    run_cmd udisks --detach "$DEV"
+fi
+
+notify "Flashing USB"
