@@ -868,11 +868,35 @@ alias shwset='r_display_settings'
 #------------------------
 #-- Default Settings ---#
 #------------------------
-sstrip
-sstbip
-sstbroot
-sstbuser
-: ${VY_LOG_LEVEL:=$VY_LOG_LEVEL_INFO}
+
+r_read_config() {
+    _cou=
+    _strip=
+    _dryrun=
+    _stb_ip=
+    _stb_user=
+    _stb_root=
+    VY_LOG_LEVEL=
+
+    scou
+    sstrip
+    sdrun
+    sstbip
+    sstbroot
+    sstbuser
+    : ${VY_LOG_LEVEL:=$VY_LOG_LEVEL_INFO}
+
+    _VY_CONFIG_FILE="$HOME/vybashrc_config"
+    [ -e "$_VY_CONFIG_FILE" ] && {
+        for i in `grep -v --regexp="\(^\s*#\|^\s*[^_V]\)" $_VY_CONFIG_FILE`
+        do
+            export $i
+        done
+    }
+    return 0
+}
+r_read_config
+
 #------------------------
 
 echo "Sourced ~/.vybashrc"
