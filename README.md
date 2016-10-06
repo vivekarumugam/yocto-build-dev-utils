@@ -46,7 +46,7 @@ This is a collection of simple utilities for yocto based development
     ssh-copy-id <user>@<machine_ip>
      e.g ssh-copy-id root@192.168.2.62
 
-    (or)
+                    (OR)
 
     cat ~/.ssh/id_rsa.pub | ssh <user>@<machine_ip> "mkdir -p ~/.ssh && cat >>  ~/.ssh/authorized_keys"
      e.g cat ~/.ssh/id_rsa.pub | ssh root@192.168.2.62 "mkdir -p ~/.ssh && cat >>  ~/.ssh/authorized_keys"
@@ -54,9 +54,9 @@ This is a collection of simple utilities for yocto based development
 
    Note :
    * In case of PaceXG1V3 boxes, remember to update iptables to accept all input packets (iptales -P INPUT ACCEPT)
-
    * Ensure dropbear is running (dropbear -p 0:22)
-
    * In some cases dropbear may display a warning banner about authorized (during scp/ssh)
+
         * Remove the '-p xyz' parameter of dropbear /lib/systemd/system/dropbear.service
+                                (OR)
         * Otherwiser trim the banner file ( 'echo "" > <the_banner_file>' )
