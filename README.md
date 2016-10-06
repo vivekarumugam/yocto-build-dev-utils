@@ -58,5 +58,5 @@ This is a collection of simple utilities for yocto based development
    * Ensure dropbear is running (dropbear -p 0:22)
 
    * In some cases dropbear may display a warning banner about authorized (during scp/ssh)
-        -> Remove the '-p xyz' parameter of dropbear /lib/systemd/system/dropbear.service
-        -> Otherwiser trim the banner file ( 'echo "" > <the_banner_file>' )
+        * Remove the '-p xyz' parameter of dropbear /lib/systemd/system/dropbear.service
+        * Otherwiser trim the banner file ( 'echo "" > <the_banner_file>' )
