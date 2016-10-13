@@ -19,6 +19,10 @@ This is a collection of simple utilities for yocto based development
             -> sstbuser <stb_usr_name>  [Set STB User Name, default=root]
             -> sstbroot <stb_root_dir>  [Set STB Root Dir, default=/]
                This will allow you to copy binaries to relative to different dir than "/"
+            -> sstbfpfx <stb_file_prefix_string>  [Set File Prefix String, default=]
+               This will allow you to prefix some string with the target file to copy to STB
+            -> sstbfsfx <stb_file_suffix_string>  [Set File Suffix String, default=]
+               This will allow you to suffix some string with the target file to copy to STB
             -> log levels
                 * svylln [Set Log Level - VY_LOG_LEVEL_NONE      (0) ]
                 * svylle [Set Log Level - VY_LOG_LEVEL_ERROR     (1) ]
@@ -30,10 +34,12 @@ This is a collection of simple utilities for yocto based development
 # Sample vybashrc_config
     _cou=1
     _strip=1
-    _dryrun=1
+    _dryrun=
     _stb_ip=192.168.2.62
     _stb_user=root
     _stb_root=/
+    _stb_file_pfx=
+    _stb_file_sfx=
     VY_LOG_LEVEL=3
 
 # flash_dev

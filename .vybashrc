@@ -206,6 +206,8 @@ r_display_settings() {
     echo "_stb_ip=$_stb_ip"
     echo "_stb_user=$_stb_user"
     echo "_stb_root=$_stb_root"
+    echo "_stb_file_pfx=$_stb_file_pfx"
+    echo "_stb_file_sfx=$_stb_file_sfx"
 
     echo -n "VY_LOG_LEVEL=$VY_LOG_LEVEL "
     case $VY_LOG_LEVEL in
@@ -524,7 +526,7 @@ r_handle_dir_creation() {
     DIR_TO_CREATE=$1
 
     [[ ! -z "$_stb_root" ]] && [[ "$_stb_root" != "/" ]] && DIR_TO_CREATE=`r_prune_path $_stb_root/$DIR_TO_CREATE`
-    r_log_var DIR_TO_CREATE
+    r_log_var_alias DIR_TO_CREATE
 
     if [[ "$_dryrun" == "" ]]; then
         ssh $_stb_user@$_stb_ip "[ ! -e $DIR_TO_CREATE ] && mkdir -p $DIR_TO_CREATE" >& /dev/null
@@ -561,7 +563,7 @@ r_handle_link_creation() {
     # r_log_info "STB : \"$PRUNED_LINK\" -> \"$PRUNED_OBJ\""
 
     [[ ! -z "$_stb_root" ]] && [[ "$_stb_root" != "/" ]] && PRUNED_LINK=`r_prune_path $_stb_root/$PRUNED_LINK`
-    r_log_var PRUNED_LINK
+    r_log_var_alias PRUNED_LINK
 
     if [[ "$_dryrun" == "" ]]; then
         ssh $_stb_user@$_stb_ip "[ -e $PRUNED_LINK -a ! -L $PRUNED_LINK ] && rm $PRUNED_LINK; \
@@ -629,6 +631,10 @@ r_handle_file_copy() {
     SYS_FILE_TO_COPY=$1
     STB_FILE_TO_COPY=$2
     SYS_FILE_HASH_MAP=$3
+
+    r_log_var_alias SYS_FILE_TO_COPY
+    r_log_var_alias STB_FILE_TO_COPY
+    r_log_var_alias SYS_FILE_HASH_MAP
     if [ -L $SYS_FILE_TO_COPY ]; then
         r_log_info "---> File Copy : Skipping link \"`basename $STB_FILE_TO_COPY`\""
         return 0
@@ -638,8 +644,17 @@ r_handle_file_copy() {
         r_hash_equal -c $SYS_FILE_HASH_MAP $SYS_FILE_TO_COPY && return 0
     fi
 
+    STB_FILE_TO_COPY_BASE=`basename $STB_FILE_TO_COPY`
+    STB_FILE_TO_COPY_DIR=`dirname $STB_FILE_TO_COPY`
+    r_log_var_alias STB_FILE_TO_COPY_BASE
+    r_log_var_alias STB_FILE_TO_COPY_DIR
+
+    [[ ! -z "$_stb_file_pfx" ]] && [[ "$_stb_file_pfx" != " " ]] && STB_FILE_TO_COPY_BASE=`r_prune_path $_stb_file_pfx$STB_FILE_TO_COPY_BASE`
+    [[ ! -z "$_stb_file_sfx" ]] && [[ "$_stb_file_sfx" != " " ]] && STB_FILE_TO_COPY_BASE=`r_prune_path $STB_FILE_TO_COPY_BASE$_stb_file_sfx`
+    STB_FILE_TO_COPY=`r_prune_path $STB_FILE_TO_COPY_DIR/$STB_FILE_TO_COPY_BASE`
+
     [[ ! -z "$_stb_root" ]] && [[ "$_stb_root" != "/" ]] && STB_FILE_TO_COPY=`r_prune_path $_stb_root/$STB_FILE_TO_COPY`
-    r_log_var STB_FILE_TO_COPY
+    r_log_var_alias STB_FILE_TO_COPY
 
     if [[ "$_dryrun" == "" ]]; then
         scp -B "$SYS_FILE_TO_COPY" $_stb_user@$_stb_ip:$STB_FILE_TO_COPY || return 1
@@ -838,8 +853,8 @@ ysetenv() {
          _VY_BUILDDIRS=`find -maxdepth 1 -name "build-*" -type d`
          _VY_NO_OF_BUILDDIRS=`echo $_VY_BUILDDIRS | wc -w`
 
-         r_log_var _VY_BUILDDIRS
-         r_log_var _VY_NO_OF_BUILDDIRS
+         r_log_var_alias _VY_BUILDDIRS
+         r_log_var_alias _VY_NO_OF_BUILDDIRS
 
          if [ $_VY_NO_OF_BUILDDIRS -eq 1 ]; then
              . meta-rdk/setup-environment $_VY_BUILDDIRS
@@ -878,6 +893,42 @@ r_unset_stb_root() {
     unset _stb_root
 }
 
+r_set_stb_file_pfx() {
+    _stb_file_pfx=${1:-""}
+    _stb_file_pfx=${_stb_file_pfx//\]/}
+    _stb_file_pfx=${_stb_file_pfx//\[/}
+
+    if [[ "$_stb_file_pfx" =~ ^[^\`~\!@#$%^\&*\(\)+|\\{}\'\"/?.,\<\>]+$ ]] && [[ ! -z "$_stb_file_pfx" ]]; then
+        return 0
+    else
+        echo "Invalid file prefix value \"$_stb_file_pfx\""
+        unset _stb_file_pfx
+        return 1
+    fi
+}
+
+r_unset_stb_file_pfx() {
+    unset _stb_file_pfx
+}
+
+r_set_stb_file_sfx() {
+    _stb_file_sfx=${1:-""}
+    _stb_file_sfx=${_stb_file_sfx//\]/}
+    _stb_file_sfx=${_stb_file_sfx//\[/}
+
+    if [[ "$_stb_file_sfx" =~ ^[^\`~\!@#$%^\&*\(\)+|\\{}\'\"/?.,\<\>]+$ ]] && [[ ! -z "$_stb_file_sfx" ]]; then
+        return 0
+    else
+        echo "Invalid file suffix value \"$_stb_file_sfx\""
+        unset _stb_file_sfx
+        return 1
+    fi
+}
+
+r_unset_stb_file_sfx() {
+    unset _stb_file_sfx
+}
+
 #------------------------
 
 alias b='r_compile'            # build 
@@ -912,6 +963,12 @@ alias usstbuser='r_unset_stb_user'
 alias sstbroot='r_set_stb_root'
 alias usstbroot='r_unset_stb_root'
 
+alias sstbfpfx='r_set_stb_file_pfx'
+alias usstbfpfx='r_unset_stb_file_pfx'
+
+alias sstbfsfx='r_set_stb_file_sfx'
+alias usstbfsfx='r_unset_stb_file_sfx'
+
 alias svylln='export VY_LOG_LEVEL=0'
 alias svylle='export VY_LOG_LEVEL=1'
 alias svyllw='export VY_LOG_LEVEL=2'
@@ -933,6 +990,8 @@ r_read_config() {
     _stb_ip=
     _stb_user=
     _stb_root=
+    _stb_file_pfx=
+    _stb_file_sfx=
     VY_LOG_LEVEL=
 
     scou
@@ -941,6 +1000,8 @@ r_read_config() {
     sstbip
     sstbroot
     sstbuser
+    usstbfpfx
+    usstbfsfx
     : ${VY_LOG_LEVEL:=$VY_LOG_LEVEL_INFO}
 
     _VY_CONFIG_FILE="$HOME/vybashrc_config"
