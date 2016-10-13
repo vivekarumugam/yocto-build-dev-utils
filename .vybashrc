@@ -701,12 +701,17 @@ r_copy_from_list() {
     CPY_FIND_HASH_FILE_PAT=_vyrc_stamp
     _FILES_COPIED=
 
+    no_of_item=0
+    total_items=`echo $CPY_LIST | wc -w`
+    r_log_var_alias total_items
+
     for i in $CPY_LIST
     do
         r_log_info "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
         r_log_info
 
-        r_log_info "Processing : $i"
+        no_of_item=$((no_of_item + 1))
+        r_log_info "Processing [$no_of_item/$total_items] : $i"
         #--- if line stars with '#' skip that
         #--- true && continue
         [[ "$i" =~ ^\s*#.* ]] && continue
