@@ -208,6 +208,8 @@ r_display_settings() {
     echo "_stb_root=$_stb_root"
     echo "_stb_file_pfx=$_stb_file_pfx"
     echo "_stb_file_sfx=$_stb_file_sfx"
+    echo "_scp_op=$_scp_op"
+    echo "_ssh_op=$_ssh_op"
 
     echo -n "VY_LOG_LEVEL=$VY_LOG_LEVEL "
     case $VY_LOG_LEVEL in
@@ -486,14 +488,16 @@ r_handle_strip() {
 }
 
 r_validate_stb_root() {
-    ping $_stb_ip -c 1 -W 1 > /dev/null
-    if [ $? -ne 0 ]; then
-        r_log_error "Host \"$_stb_ip\" not alive!"
-        return 1
+    if [[ "$_ssh_op" == "" ]]; then
+        ping $_stb_ip -c 1 -W 1 > /dev/null
+        if [ $? -ne 0 ]; then
+            r_log_error "Host \"$_stb_ip\" not alive!"
+            return 1
+        fi
     fi
 
     if [[ "$_dryrun" != "" ]]; then
-        _VY_STB_NAME=`ssh -o NumberOfPasswordPrompts=1 $_stb_user@$_stb_ip "uname -n" 2> /dev/null`
+        _VY_STB_NAME=`ssh $_ssh_op -o NumberOfPasswordPrompts=1 $_stb_user@$_stb_ip "uname -n" 2> /dev/null`
         r_log_var_alias VY_STB_NAME
 
         if [[ $? -eq 0 ]] && [[ "$_VY_STB_NAME" =~ ^(pace|arris|cisco).*$ ]]; then
@@ -505,7 +509,7 @@ r_validate_stb_root() {
             return 0
         else
             r_log_info "Dealing with machine : $_VY_STB_NAME"
-            _VY_HOME_DIR=`ssh -o NumberOfPasswordPrompts=1 $_stb_user@$_stb_ip 'echo $PWD' 2> /dev/null`
+            _VY_HOME_DIR=`ssh $_ssh_op -o NumberOfPasswordPrompts=1 $_stb_user@$_stb_ip 'echo $PWD' 2> /dev/null`
             r_log_var_alias _VY_HOME_DIR
             if [[ $? == 0 ]] && [[ ! -z "$_VY_HOME_DIR" ]] && [[ "$_stb_root" =~ "$_VY_HOME_DIR" ]]; then
                 return 0
@@ -529,9 +533,9 @@ r_handle_dir_creation() {
     r_log_var_alias DIR_TO_CREATE
 
     if [[ "$_dryrun" == "" ]]; then
-        ssh $_stb_user@$_stb_ip "[ ! -e $DIR_TO_CREATE ] && mkdir -p $DIR_TO_CREATE" >& /dev/null
+        ssh $_ssh_op $_stb_user@$_stb_ip "[ ! -e $DIR_TO_CREATE ] && mkdir -p $DIR_TO_CREATE" >& /dev/null
     else
-        r_log_debug ssh $_stb_user@$_stb_ip "[ ! -e $DIR_TO_CREATE ] && mkdir -p $DIR_TO_CREATE"
+        r_log_debug ssh $_ssh_op $_stb_user@$_stb_ip "[ ! -e $DIR_TO_CREATE ] && mkdir -p $DIR_TO_CREATE"
     fi
 
     return 0
@@ -566,10 +570,10 @@ r_handle_link_creation() {
     r_log_var_alias PRUNED_LINK
 
     if [[ "$_dryrun" == "" ]]; then
-        ssh $_stb_user@$_stb_ip "[ -e $PRUNED_LINK -a ! -L $PRUNED_LINK ] && rm $PRUNED_LINK; \
+        ssh $_ssh_op $_stb_user@$_stb_ip "[ -e $PRUNED_LINK -a ! -L $PRUNED_LINK ] && rm $PRUNED_LINK; \
             [ ! -e $PRUNED_LINK ] && ln -s $PRUNED_OBJ $PRUNED_LINK" >& /dev/null
     else
-        r_log_debug ssh $_stb_user@$_stb_ip "[ -e $PRUNED_LINK -a ! -L $PRUNED_LINK ] && rm $PRUNED_LINK; \
+        r_log_debug ssh $_ssh_op $_stb_user@$_stb_ip "[ -e $PRUNED_LINK -a ! -L $PRUNED_LINK ] && rm $PRUNED_LINK; \
             [ ! -e $PRUNED_LINK ] && ln -s $PRUNED_OBJ $PRUNED_LINK"
     fi
 
@@ -657,9 +661,9 @@ r_handle_file_copy() {
     r_log_var_alias STB_FILE_TO_COPY
 
     if [[ "$_dryrun" == "" ]]; then
-        scp -B "$SYS_FILE_TO_COPY" $_stb_user@$_stb_ip:$STB_FILE_TO_COPY || return 1
+        scp $_ssh_op "$SYS_FILE_TO_COPY" $_stb_user@$_stb_ip:$STB_FILE_TO_COPY || return 1
     else
-        r_log_debug scp -B "$SYS_FILE_TO_COPY" $_stb_user@$_stb_ip:$STB_FILE_TO_COPY
+        r_log_debug scp $_ssh_op "$SYS_FILE_TO_COPY" $_stb_user@$_stb_ip:$STB_FILE_TO_COPY
     fi
     _FILES_COPIED="$_FILES_COPIED $STB_FILE_TO_COPY"
 
@@ -934,6 +938,22 @@ r_unset_stb_file_sfx() {
     unset _stb_file_sfx
 }
 
+r_set_scp_op() {
+    export _scp_op=${1:-"-B"}
+}
+
+r_unset_scp_op() {
+    _scp_op="-B"
+}
+
+r_set_ssh_op() {
+    export _ssh_op=${1:-""}
+}
+
+r_unset_ssh_op() {
+    _ssh_op=""
+}
+
 #------------------------
 
 alias b='r_compile'            # build 
@@ -982,6 +1002,12 @@ alias svylld='export VY_LOG_LEVEL=4'
 alias svyllv='export VY_LOG_LEVEL=5'
 alias usvyll='unset VY_LOG_LEVEL'
 
+alias sscpop='r_set_scp_op'
+alias usscpop='r_unset_scp_op'
+
+alias ssshop='r_set_ssh_op'
+alias ussshop='r_unset_ssh_op'
+
 alias shwset='r_display_settings'
 
 #------------------------
@@ -997,6 +1023,8 @@ r_read_config() {
     _stb_root=
     _stb_file_pfx=
     _stb_file_sfx=
+    _scp_op=
+    _ssh_op=
     VY_LOG_LEVEL=
 
     scou
@@ -1007,15 +1035,23 @@ r_read_config() {
     sstbuser
     usstbfpfx
     usstbfsfx
+    usscpop
+    ussshop
     : ${VY_LOG_LEVEL:=$VY_LOG_LEVEL_INFO}
 
     _VY_CONFIG_FILE="$HOME/vybashrc_config"
     [ -e "$_VY_CONFIG_FILE" ] && {
-        for i in `grep -v --regexp="\(^\s*#\|^\s*[^_V]\)" $_VY_CONFIG_FILE`
+        while read line
         do
-            export $i
-        done
+            #echo $line
+            if [[ $line =~ ^\s*[^#].*$ ]]; then
+                export "$line"
+            fi
+        done < $_VY_CONFIG_FILE
     }
+
+    _scp_op=${_scp_op:=-B}
+
     return 0
 }
 r_read_config
