@@ -954,19 +954,37 @@ r_unset_ssh_op() {
     _ssh_op=""
 }
 
+r_notify () {
+    if [[ "$?" == "0" ]]; then
+        PREV_RESULT="success"
+        ICON=face-cool
+    else
+        PREV_RESULT="failure"
+        ICON=face-angry
+    fi
+
+    if [[ "$1" != "" ]]; then
+        PREV_RESULT="$1 - $PREV_RESULT"
+    fi
+
+    #gnome-terminal --maximize --profile "My Title" --title "$PREV_RESULT"
+    killall notify-osd
+    notify-send -u critical "$PREV_RESULT" -i $ICON
+}
+
 #------------------------
 
-alias b='r_compile'            # build 
-alias i='r_install'            # install 
-alias jc='r_copy'              # copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
-alias jca='r_copy image'       # copy all image/ contents to stb (except links) (jca-just copy all)
+alias b='r_compile; r_notify b'                                      # build 
+alias i='r_install; r_notify i'                                      # install 
+alias jc='r_copy; r_notify jc'                                       # copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
+alias jca='r_copy image; r_notify jca'                               # copy all image/ contents to stb (except links) (jca-just copy all)
 
-alias bi='b && i'              # build & install
-alias bic='b && i && jc'       # build & install & copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
-alias bica='b && i && jca'     # build & install & copy all image/ contents to stb (except links)
+alias bi='r_compile && r_install; r_notify bi'                       # build & install
+alias bic='r_compile && r_install && r_copy; r_notify bic'           # build & install & copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
+alias bica='r_compile && r_install && r_copy image; r_notify bica'   # build & install & copy all image/ contents to stb (except links)
 
-alias ic='i && jc'             # install & copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
-alias ica='i && jca'           # install & copy all image/ contents to stb (except links)
+alias ic='r_install && r_copy; r_notify ic'                          # install & copy "FILES_INFO" list from pkgdata/runtime/<component> (except links)
+alias ica='r_install && r_copy image; r_notify ica'                  # install & copy all image/ contents to stb (except links)
 
 #------------------------
 
