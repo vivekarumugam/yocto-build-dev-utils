@@ -963,8 +963,15 @@ r_notify () {
         ICON=face-angry
     fi
 
-    if [[ "$1" != "" ]]; then
-        PREV_RESULT="$1 - $PREV_RESULT"
+    if [ ! -z $COMPONENT ]; then
+        notification_title=$COMPONENT
+    else
+        notification_title=$1
+    fi
+    r_log_var_alias notification_title
+
+    if [[ "$notification_title" != "" ]]; then
+        PREV_RESULT="$notification_title : $PREV_RESULT"
     fi
 
     #gnome-terminal --maximize --profile "My Title" --title "$PREV_RESULT"
