@@ -963,11 +963,19 @@ r_notify () {
         ICON=face-angry
     fi
 
+    notification_title=
     if [ ! -z $COMPONENT ]; then
         notification_title=$COMPONENT
-    else
-        notification_title=$1
     fi
+
+    if [[ ! -z $notification_title ]] && [[ ! -z $1 ]]; then
+        notification_title="$notification_title -"
+    fi
+
+    if [ ! -z $1 ]; then
+        notification_title="$notification_title $1"
+    fi
+
     r_log_var_alias notification_title
 
     if [[ "$notification_title" != "" ]]; then
