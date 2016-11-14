@@ -226,7 +226,7 @@ r_display_settings() {
 r_log_info() {
     _prev_res=$?
     if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_INFO ]]; then
-        [ $# -gt 0 ] && echo -ne "${Green}[INFO] ${White}"
+        [ $# -gt 0 ] && echo -ne "${Green}[INFO] ${NC}"
         echo "$@"
     fi
     return $_prev_res
@@ -235,7 +235,7 @@ r_log_info() {
 r_log_warn() {
     _prev_res=$?
     if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_WARN ]]; then
-        [ $# -gt 0 ] && echo -ne "${Yellow}[WARN] ${White}"
+        [ $# -gt 0 ] && echo -ne "${Yellow}[WARN] ${NC}"
         echo $@
     fi
     return $_prev_res
@@ -244,9 +244,9 @@ r_log_warn() {
 r_log_error() {
     _prev_res=$?
     if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_ERROR ]]; then
-        [ $# -gt 0 ] && echo -ne "${Red}[ERROR] ${White}"
+        [ $# -gt 0 ] && echo -ne "${Red}[ERROR] ${NC}"
         echo "$@"
-        #echo "${Red}$@${White}"
+        #echo "${Red}$@${NC}"
     fi
     return $_prev_res
 }
@@ -254,7 +254,7 @@ r_log_error() {
 r_log_debug() {
     _prev_res=$?
     if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_DEBUG ]]; then
-        [ $# -gt 0 ] && echo -ne "${Purple}[DEBUG] ${White}"
+        [ $# -gt 0 ] && echo -ne "${Purple}[DEBUG] ${NC}"
         echo $@
     fi
     return $_prev_res
@@ -282,7 +282,7 @@ r_log_var() {
 
     _prev_res=$?
     if [[ "$VY_LOG_LEVEL" != "" ]] && [[ $VY_LOG_LEVEL -ge $VY_LOG_LEVEL_DEBUG_VAR ]]; then
-        [ $# -gt 0 ] && echo -ne "${Cyan}[DEBUG_VAR] ${White}"
+        [ $# -gt 0 ] && echo -ne "${Cyan}[DEBUG_VAR] ${NC}"
         _vvalue=`eval "expr \"\$"$_vname"\" "`
         echo "$_fname : "$_vname=$_vvalue
     fi
@@ -682,7 +682,7 @@ r_display_incomplete() {
         echo "------------ PROCESS INCOMPLETE ------------"
         echo "---> $1 returned \"$2\""
         echo "--------------------------------------------"
-        echo -e ${White}
+        echo -e ${NC}
     fi
 }
 alias r_display_incomplete_alias='r_display_incomplete $FUNCNAME'
